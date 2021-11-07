@@ -1,7 +1,14 @@
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
+/*
+#include "/home/jost/makerkram/bewaesserung/sketch/WebServer/src/WebServer.h"
+#include "/home/jost/makerkram/bewaesserung/sketch/PageBuilder/src/PageBuilder.h"
+*/
 #include <WebServer.h>
 #include <PageBuilder.h>
+
+#define SSID "ssid"
+#define PASSWORD "password"
 
 #define N_PLANTS 8
 
@@ -249,17 +256,9 @@ class RootPageBuilder : public PageBuilder {
             PageBuilder::addElement(htmlFooter);
             Serial.println();
 
-            /*
-            Serial.println("_elements:");
-            String built;
-            for(auto it = std::begin(_elements); it!=std::end(_elements); ++it){
-                it->get().build(built);
-                Serial.println("new element");
-                Serial.println(built);
-            }
-            */
             
             PageBuilder::handle(server, requestMethod, requestUri);
+
         }
 };
 
@@ -350,7 +349,10 @@ void setup(){
 
     Serial.begin(115200);
 
-    WiFi.begin("ssid", "password");
+//    WiFi.mode(WIFI_STA);
+//    esp_wifi_set_ps(WIFI_PS_NONE);
+
+    WiFi.begin(SSID, PASSWORD);
     while (WiFi.status() != WL_CONNECTED){
         delay(100);
     }
@@ -366,6 +368,6 @@ void setup(){
         
 
 void loop(void){
-    server.handleClient();
     delay(1);
+    server.handleClient();
 }
