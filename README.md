@@ -12,8 +12,8 @@ Change section `board_manager` in `~/.arduino15/arduino-cli.yaml` to look like t
 
 ```
 board_manager:
-  additional_urls:
-    - https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+  additional_urls: https://dl.espressif.com/dl/package_esp32_index.json
+    - 
 ```
 
 `arduino-cli core update-index`
@@ -40,4 +40,3 @@ If necessary, replace `/dev/ttyUSB0` in the Makefile with the serial port your E
 `make monitor`
 
 Feel free to use a different serial monitor than picocom but keep the same baud rate.
-
