@@ -12,8 +12,7 @@ Change section `board_manager` in `~/.arduino15/arduino-cli.yaml` to look like t
 
 ```
 board_manager:
-  additional_urls: https://dl.espressif.com/dl/package_esp32_index.json
-    - 
+ - additional_urls: https://dl.espressif.com/dl/package_esp32_index.json
 ```
 
 `arduino-cli core update-index`
