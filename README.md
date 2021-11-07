@@ -8,7 +8,7 @@
 
 ### Install esp32 core:
 
-Change section in `~/.arduino15/arduino-cli.yaml` to look like the following:
+Change section `board_manager` in `~/.arduino15/arduino-cli.yaml` to look like the following:
 
 ```
 board_manager:
