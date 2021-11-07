@@ -1,11 +1,10 @@
 #include <Adafruit_ADS1X15.h>
 #include <WiFi.h>
-/*
-#include "/home/jost/makerkram/bewaesserung/sketch/WebServer/src/WebServer.h"
-#include "/home/jost/makerkram/bewaesserung/sketch/PageBuilder/src/PageBuilder.h"
-*/
 #include <WebServer.h>
+#include <uri/UriRegex.h>
 #include <PageBuilder.h>
+
+#include "static.h"
 
 #define SSID "ssid"
 #define PASSWORD "password"
@@ -15,7 +14,7 @@
 enum PlantMode {notAttached, manual, automatic};
 
 struct Plant{
-    char name[51];
+    String name;
     PlantMode mode;
 
     Adafruit_ADS1115 adc;
@@ -60,213 +59,116 @@ int pumpGPIOs[] { 32, 33, 25, 26, 27, 14, 12, 13 };
 
 WebServer server;
 
-static const char HTML_HEADER_MOLD[] = {
-    "<!DOCTYPE html>\n"
-    "<html>\n"
-    " <head>\n"
-    "  <meta content=\"text/html;charset=utf-8\" http-equiv=\"Content-Type\">\n"
-    "  <meta content=\"utf-8\" http-equiv=\"encoding\">\n"
-    "  <title>{{TITLE}}</title>\n"
-    " </head>\n"
-    " <body>\n"
-};
 
-static const char HTML_FOOTER_MOLD[] = {
-    " </body>\n"
-    "</html>\n"
-};
-
-static const char ADD_EDIT_PAGE_BODY_MOLD[] = {
-    "  <h1>{{ADD_OR_EDIT_STR}} plant</h1>\n"
-    "{{NONE_AVAIL_HEADING}}"
-    "  <form{{NONE_AVAIL_FORM_HIDDEN}}action=\"add-or-edit-submit\" method=\"post\">\n"
-    "   <div>\n"
-    "    <label for=\"port-select\">Port:</label>\n"
-    "    <select{{PORT_SELECT_READONLY}}name=\"slot\" id=\"port-select\">\n"
-    "{{PORT_OPTS}}\n"
-    "    </select>\n"
-    "   </div>\n"
-    "   <div>\n"
-    "    <label for=\"name-select\">Name:</label>\n"
-    "    <input name=\"name\" id=\"name-select\" type=\"text\" pattern=\"[\\x20-\\x7E]+\" maxlength=\"50\"{{NAME_DEFAULT_VALUE}}>\n"
-    "   </div>\n"
-    "   <div>\n"
-    "    <label for=\"mode-select\">Mode:</label>\n"
-    "    <select name=\"mode\" id=\"mode-select\">\n"
-    "     <option{{AUTOMATIC_SELECTED_PRESET}}value=\"Automatic\">Automatic</option>\n"
-    "     <option{{MANUAL_SELECTED_PRESET}}value=\"Manual\">Manual</option>\n"
-    "    </select>\n"
-    "   </div>\n"
-    "   <div id=\"threshold-interval-container\">\n"
-    "    <div>\n"
-    "     <label for=\"threshold-select\">Moisture threshold:</label>\n"
-    "     <input name=\"threshold\" id=\"threshold-select\" type=\"number\" min=\"0\" max=\"60\"{{THRESHOLD_DEFAULT_VALUE}}>\n"
-    "    </div>\n"
-    "    <div>\n"
-    "     <label for=\"interval-select\">Checking interval:</label>\n"
-    "     <input name=\"interval\" id=\"interval-select\" type=\"number\" min=\"1\" max=\"14\"{{INTERVAL_DEFAULT_VALUE}}>\n"
-    "    </div>\n"
-    "   </div>\n"
-    "   <div>\n"
-    "    <button type=\"submit\" onClick=\"window.location.href='/'\" id=\"submit-btn\">Save</button>\n"
-    "   </div>\n"
-    "  </form>\n"
-    "  <script>\n"
-    "    let sel = document.getElementById(\"mode-select\");\n"
-    "    sel.addEventListener(\"change\", function() {\n"
-    "        let tic = document.getElementById(\"threshold-interval-container\");\n"
-    "        if (sel.value == \"Manual\") {\n"
-    "            tic.style.display = \"none\";\n"
-    "        }\n"
-    "        else {\n"
-    "            tic.style.display = \"block\";\n"
-    "        }\n"
-    "    });\n"
-    "  </script>\n"
-};
-
-
-class AddPageBuilder : public PageBuilder {
+class GetPlantPageBuilder : public PageBuilder {
     public:
-        AddPageBuilder(const char* uri, PageElementVT elements, HTTPMethod method = HTTP_ANY, bool noCache = true, bool cancel = false, TransferEncoding_t chunked = Auto)
-            : PageBuilder{ uri, elements, method, noCache, cancel, chunked }
+        GetPlantPageBuilder() : PageBuilder({}, HTTP_GET), _uri("^\\/plants\\/([0-N_PLANTS]+)$")
         {
+            _uri.initPathArgs(pathArgs);
+        }
+
+        bool canHandle(HTTPMethod method, String requestUri){
+            if (method == HTTP_GET) return _uri.canHandle(requestUri, pathArgs);
+            return false;
         }
 
         bool handle(WebServer& server, HTTPMethod requestMethod, PageBuilderUtil::URI_TYPE_SIGNATURE requestUri){
             PageBuilder::clearElements();
 
-            PageElement htmlHeader(HTML_HEADER_MOLD, {{"TITLE", [](PageArgument& args){ return String("Add plant"); }}});
-            PageBuilder::addElement(htmlHeader);
+            int plantId = server.pathArg(0).toInt();
+            
+            PageElement header(
+                HTML_HEADER_MOLD,
+                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(plantId); }}}
+            );
+            PageBuilder::addElement(header);
 
-            PageElement body(ADD_EDIT_PAGE_BODY_MOLD, {{"ADD_OR_EDIT_STR", [](PageArgument& args){ return String("Add"); }},
-                                                       {"PORT_SELECT_READONLY", [](PageArgument& args){ return String(" "); }},
-                                                       {"NAME_DEFAULT_VALUE", [](PageArgument& args){ return String(""); }},
-                                                       {"AUTOMATIC_SELECTED_PRESET", [](PageArgument& args){ return String(" selected=\"selected\" "); }},
-                                                       {"MANUAL_SELECTED_PRESET", [](PageArgument& args){ return String(" "); }},
-                                                       {"THRESHOLD_DEFAULT_VALUE", [](PageArgument& args){ return String(""); }},
-                                                       {"INTERVAL_DEFAULT_VALUE", [](PageArgument& args){ return String(""); }}});
-            String portOpts = "";
-            for (int i = 0; i < N_PLANTS; i++){
-                if (plants[i].mode == notAttached){
-                    String port = String(i);
-                    portOpts += String("     <option value=\"") + port + String("\">") + port + String("</option>\n");
+            Plant plant = plants[plantId];
+            printPlant(plantId);
+            String asp, msp, defaultInterval, defaultThreshold;
+            if (plant.mode != notAttached){
+                if (plant.mode == automatic){
+                    msp = " ";
+                    asp = " selected=\"selected\" ";
+                    defaultInterval = String(plant.wateringInterval);
+                    defaultThreshold = String(plant.moistureThreshold);
+                } else {
+                    msp = " selected=\"selected\" ";
+                    asp = " ";
+                    defaultInterval = String("");
+                    defaultThreshold = String("");
                 }
-            }
-
-            if (portOpts == ""){
-                body.addToken("NONE_AVAIL_HEADING", [](PageArgument& args){ return String("  <h2 style=\"color:red;\">No plant slots are available.</h2>\n"); });
-                body.addToken("NONE_AVAIL_FORM_HIDDEN", [](PageArgument& args){ return String(" hidden "); });
             } else {
-                body.addToken("NONE_AVAIL_HEADING", [](PageArgument& args){ return String(""); });
-                body.addToken("NONE_AVAIL_FORM_HIDDEN", [](PageArgument& args){ return String(" "); });
+                    msp = " ";
+                    asp = " selected=\"selected\" ";
+                    defaultInterval = String("");
+                    defaultThreshold = String("");
             }
-
-            body.addToken("PORT_OPTS", [=](PageArgument& args){ return portOpts; });
+            PageElement body(
+                GET_PLANT_BODY_MOLD,
+                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(plantId); }},
+                 {"ID", [=](PageArgument& args){ return String(plantId); }},
+                 {"NAME", [=](PageArgument& args){ return plant.name; }},
+                 {"AUTOMATIC_SELECTED_PRESET", [=](PageArgument& args){ return asp; }},
+                 {"MANUAL_SELECTED_PRESET", [=](PageArgument& args){ return msp; }},
+                 {"THRESHOLD_DEFAULT_VALUE", [=](PageArgument& args){ return defaultThreshold; }},
+                 {"INTERVAL_DEFAULT_VALUE", [=](PageArgument& args){ return defaultInterval; }}}
+            );
             PageBuilder::addElement(body);
 
-            PageElement htmlFooter(HTML_FOOTER_MOLD, {});
-            PageBuilder::addElement(htmlFooter);
+            PageElement footer(HTML_FOOTER_MOLD, {});
+            PageBuilder::addElement(footer);
 
             PageBuilder::handle(server, requestMethod, requestUri);
-
         }
+
+    private:
+        UriRegex _uri;
 };
+
 
 class RootPageBuilder : public PageBuilder {
     public:
-        RootPageBuilder(const char* uri, PageElementVT elements, HTTPMethod method = HTTP_ANY, bool noCache = true, bool cancel = false, TransferEncoding_t chunked = Auto)
-            : PageBuilder{ uri, elements, method, noCache, cancel, chunked }
-        {
-        }
+        RootPageBuilder() : PageBuilder{ "/plants", {}, HTTP_GET}{}
 
         bool handle(WebServer& server, HTTPMethod requestMethod, PageBuilderUtil::URI_TYPE_SIGNATURE requestUri){
-            Serial.println("new request: /");
-
             PageBuilder::clearElements();
-            
-            PageElement htmlHeader(HTML_HEADER_MOLD, {{"TITLE", [](PageArgument& args){ return String("Active plants"); }}});
-            PageBuilder::addElement(htmlHeader);
 
-            static const char BODY_HEADER_MOLD[] = "  <h1>Active plants</h1>\n";
-            PageElement bodyHeader(BODY_HEADER_MOLD, {});
-            PageBuilder::addElement(bodyHeader);
+            PageElement header(
+                HTML_HEADER_MOLD,
+                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(plantId); }}}
+            );
 
-            static const char AUTOMATIC_PLANT_DIV_MOLD[] = {
-                "  <div>\n"
-                "   <h3>Slot {{SLOT}}: {{NAME}}</h3>\n"
-                "   <p>Mode: Automatic</p>\n"
-                "   <p>Moisture threshold: {{THRESHOLD}}</P>\n"
-                "   <p>Watering interval: {{INTERVAL}}</P>\n"
-                "   <div>\n"
-                "    <form action=\"edit\" method=\"post\">\n"
-                "     <input hidden name=\"slot\" type=\"number\" readonly=\"readonly\" value=\"{{SLOT}}\">\n"
-                "     <button type=\"submit\">Edit</button>\n"
-                "    </form>\n"
-                "   </div>\n"
-                "   <div>\n"
-                "    <form action=\"delete\" method=\"post\">\n"
-                "     <input hidden name=\"slot\" type=\"number\" readonly=\"readonly\" value=\"{{SLOT}}\">\n"
-                "     <button type=\"submit\">Delete</button>\n"
-                "    </form>\n"
-                "   </div>\n"
-                "  </div>\n"
-            };
-
-            static const char MANUAL_PLANT_DIV_MOLD[] = {
-                "  <div>\n"
-                "   <h3>Slot {{SLOT}}: {{NAME}}</h3>\n"
-                "   <p>Mode: Manual</p>\n"
-                "   <div>\n"
-                "    <form action=\"edit\" method=\"post\">\n"
-                "     <input hidden name=\"slot\" type=\"number\" readonly=\"readonly\" value=\"{{SLOT}}\">\n"
-                "     <button type=\"submit\">Edit</button>\n"
-                "    </form>\n"
-                "   </div>\n"
-                "   <div>\n"
-                "    <form action=\"delete\" method=\"post\">\n"
-                "     <input hidden name=\"slot\" type=\"number\" readonly=\"readonly\" value=\"{{SLOT}}\">\n"
-                "     <button type=\"submit\">Delete</button>\n"
-                "    </form>\n"
-                "   </div>\n"
-                "  </div>\n"
-            };
-            
             PageElement* plantDiv;
             for (int i = 0; i < N_PLANTS; i++){
                 Plant plant = plants[i];
                 if (plant.mode != notAttached){
-                    printPlant(i);
                     if (plant.mode == automatic){
-                        plantDiv = new PageElement(AUTOMATIC_PLANT_DIV_MOLD, {{"SLOT", [=](PageArgument& args){ return String(i); }},
-                                                                          {"NAME", [=](PageArgument& args){ return String(plant.name); }},
-                                                                          {"THRESHOLD", [=](PageArgument& args){ return String(plant.moistureThreshold); }},
-                                                                          {"INTERVAL", [=](PageArgument& args){ return String(plant.wateringInterval); }}});
+                        plantDiv = new PageElement(AUTOMATIC_PLANT_DIV_MOLD,
+                                                   {{"SLOT", [=](PageArgument& args){ return String(i); }},
+                                                    {"NAME", [=](PageArgument& args){ return String(plant.name); }},
+                                                    {"THRESHOLD", [=](PageArgument& args){ return String(plant.moistureThreshold); }},
+                                                    {"INTERVAL", [=](PageArgument& args){ return String(plant.wateringInterval); }}});
 
                     }
                     if (plant.mode == manual){
-                        plantDiv = new PageElement(MANUAL_PLANT_DIV_MOLD, {{"SLOT", [=](PageArgument& args){ return String(i); }},
-                                                                       {"NAME", [=](PageArgument& args){ return plant.name; }}});
+                        plantDiv = new PageElement(MANUAL_PLANT_DIV_MOLD,
+                                                   {{"SLOT", [=](PageArgument& args){ return String(i); }},
+                                                    {"NAME", [=](PageArgument& args){ return plant.name; }}});
                     }
                     PageBuilder::addElement(*plantDiv);
                 }
             }
             
-            PageElement htmlFooter(HTML_FOOTER_MOLD, {});
-            PageBuilder::addElement(htmlFooter);
-            Serial.println();
-
+            PageElement footer(HTML_FOOTER_MOLD, {});
+            PageBuilder::addElement(footer);
             
             PageBuilder::handle(server, requestMethod, requestUri);
-
         }
 };
 
-
-
-void handleEditSubmit(){
-    Serial.println("new request: /add-or-edit-submit");
-    int slot = server.arg("slot").toInt();
+void handlePlantPost(){
+    int slot = server.pathArg(0).toInt();
     String name = server.arg("name");
     PlantMode mode = server.arg("mode") == "Automatic" ? automatic : manual;
     int threshold, interval;
@@ -275,56 +177,26 @@ void handleEditSubmit(){
         interval = server.arg("interval").toInt();
     }
 
-    Serial.print("edit_request(slot=");
-    Serial.print(slot);
-    Serial.print(", name=");
-    Serial.print(name);
-    Serial.print(", mode=");
-    Serial.print(mode);
-    Serial.print(", threshold=");
-    Serial.print(threshold);
-    Serial.print(", interval=");
-    Serial.print(interval);
-    Serial.println(")\n");
-
-    name.toCharArray(plants[slot].name, 50);
+    plants[slot].name = name;
     plants[slot].mode = mode;
     plants[slot].moistureThreshold = threshold;
     plants[slot].wateringInterval = interval;
 
-    server.send(200, "text/plain", "Plant updated successfully");
+    printPlant(slot);
+    
+    server.send(200);
 }
 
-/*
-void assembleEditPage(PageBuilder& pb){
-    pb.clearElements();
-
-    PageElement htmlHeader(HTML_HEADER_MOLD, {{"TITLE", [](PageArgument& args){ return String("Edit plant"); }}});
-    pb.addElement(htmlHeader);
-
-    int plantId = server.arg("slot").toInt();
-    Plant plant = plants[plantId];
-    String automaticSelectedPreset = plant.mode == automatic ? String(" selected=\"selected\" ") : String(" ");
-    String manualSelectedPreset = plant.mode == manual ? String(" selected=\"selected\" ") : String(" ");
-    String thresholdDefaultValue = plant.mode == automatic ? String("value=\"") + String(plant.moistureThreshold) + String("\"") : String("");
-    String intervalDefaultValue = plant.mode == automatic ? String("value=\"") + String(plant.wateringInterval) + String("\"") : String("");
-
-    PageElement body(ADD_EDIT_PAGE_BODY_MOLD, {{"ADD_OR_EDIT_STR", [](PageArgument& args){ return String("Edit"); }},
-                                               {"PORT_SELECT_READONLY", [](PageArgument& args){ return String(" readonly=\"readonly\" "); }},
-                                               {"NAME_DEFAULT_VALUE", [=](PageArgument& args){ return plant.name; }},
-                                               {"AUTOMATIC_SELECTED_PRESET", [=](PageArgument& args){ return automaticSelectedPreset; }},
-                                               {"MANUAL_SELECTED_PRESET", [=](PageArgument& args){ return manualSelectedPreset; }},
-                                               {"THRESHOLD_DEFAULT_VALUE", [=](PageArgument& args){ return thresholdDefaultValue; }},
-                                               {"INTERVAL_DEFAULT_VALUE", [=](PageArgument& args){ return intervalDefaultValue; }}});
-    pb.addElement(body);
-    PageElement htmlFooter(HTML_FOOTER_MOLD, {});
-    pb.addElement(htmlFooter);
+void handlePlantDelete(){
+    int plantId = server.pathArg(0).toInt();
+    plants[plantId].mode = notAttached;
+    plants[plantId].name = String("");
+    server.send(200);
 }
 
-*/
 
-AddPageBuilder addPagePB{"/add", {}, HTTP_GET};
-RootPageBuilder rootPagePB{"/", {}, HTTP_GET};
+GetPlantPageBuilder getPlantPB;
+//RootPageBuilder rootPagePB{"/", {}, HTTP_GET};
 
 void setup(){
     if (!adsGND.begin()) {
@@ -348,10 +220,6 @@ void setup(){
     }
 
     Serial.begin(115200);
-
-//    WiFi.mode(WIFI_STA);
-//    esp_wifi_set_ps(WIFI_PS_NONE);
-
     WiFi.begin(SSID, PASSWORD);
     while (WiFi.status() != WL_CONNECTED){
         delay(100);
@@ -359,13 +227,14 @@ void setup(){
     Serial.print("IP address:");
     Serial.println(WiFi.localIP().toString());
 
-    addPagePB.insert(server);
-    rootPagePB.insert(server);
-    server.on("/add-or-edit-submit", HTTP_POST, handleEditSubmit);
+    getPlantPB.insert(server);
+//    rootPagePB.insert(server);
+
+    server.on(UriRegex("^\\/plants\\/([0-8]+)$"), HTTP_DELETE, handlePlantDelete);
+    server.on(UriRegex("^\\/plants\\/([0-8]+)$"), HTTP_POST, handlePlantPost);
 
     server.begin();
 }
-        
 
 void loop(void){
     delay(1);

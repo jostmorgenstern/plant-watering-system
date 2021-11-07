@@ -1,0 +1,39 @@
+        <h1>Slot {{ID}}</h1>
+        <form action="/plants/{{ID}}" method="post">
+            <div>
+                <label for="name-select">Name:</label>
+                <input name="name" id="name-select" type="text" pattern="[x20-x7E]+" maxlength="50" value="{{NAME}}">
+            </div>
+            <div>
+                <label for="mode-select">Mode:<label>
+                <select name="mode" id="mode-select">
+                    <option{{AUTOMATIC_SELECTED_PRESET}}value="Automatic">Automatic</option>
+                    <option{{MANUAL_SELECTED_PRESET}}value="Manual">Manual</option>
+                </select>
+            </div>
+            <div id="threshold-interval-container">
+                <div>
+                    <label for="threshold-select">Moisture threshold:</label>
+                    <input name="threshold" id="threshold-select" type="number" min="0" max="60" value="{{THRESHOLD_DEFAULT_VALUE}}">
+                </div>
+                <div>
+                    <label for="interval-select">Checking interval:</label>
+                    <input name="interval" id="interval-select" type="number" min="1" max="14" value="{{INTERVAL_DEFAULT_VALUE}}">
+                </div>
+            </div>
+            <div>
+                <button type="submit" id="submit-btn">Save</button>
+            </div>
+        </form>
+        <script>
+            let sel = document.getElementById("mode-select");
+            sel.addEventListener("change", function() {
+                let tic = document.getElementById("threshold-interval-container");
+                if (sel.value == "Manual") {
+                    tic.style.display = "none";
+                } else {
+                    tic.style.display = "block";
+                }
+            });
+        </script>
+

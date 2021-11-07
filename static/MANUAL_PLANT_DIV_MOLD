@@ -1,0 +1,15 @@
+<div>
+    <h3>Slot {{SLOT}}: {{NAME}}</h3>
+    <p>Mode: Manual</p>
+    <div>
+        <form action="/plants/{{SLOT}}" method="post">
+            <button type="submit">Edit</button>
+        </form>
+    </div>
+    <div>
+        <form action="delete" method="post">
+            <input hidden name="slot" type="number" readonly="readonly" value="{{SLOT}}">
+            <button type="submit">Delete</button>
+        </form>
+    </div>
+</div>
