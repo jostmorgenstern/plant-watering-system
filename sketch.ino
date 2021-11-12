@@ -3,54 +3,66 @@
 #include <WebServer.h>
 #include <uri/UriRegex.h>
 #include <PageBuilder.h>
+#include <regex>
 
 #include "static.h"
 
 #define SSID "ssid"
-#define PASSWORD "password"
+#define PASSWORD "ssid"
+#define N_SLOTS 8
+#define SLOT_ID_REGEX "^[0-7]$"
+#define THRESHOLD_REGEX "\\d\\d"
+#define INTERVAL_REGEX "^([1-9]|(1[0-4]))$"
+#define MAX_SLOT_NAME_LEN 50
+#define MIN_THRESHOLD 30
+#define MAX_THRESHOLD 50
+#define MIN_INTERVAL 1
+#define MAX_INTERVAL 14
 
-#define N_PLANTS 8
 
-enum PlantMode {notAttached, manual, automatic};
+enum SlotMode {none, manual, automatic};
 
-struct Plant{
-    String name;
-    PlantMode mode;
+struct Slot{
+    char name[MAX_SLOT_NAME_LEN + 1];
+    SlotMode mode;
 
     Adafruit_ADS1115 adc;
     int adcPort;
 
     int pumpGPIO;
 
-    int moistureThreshold; // percentage
-    int wateringInterval; // number of days
+    int threshold; // percentage
+    int interval; // number of days
 };
 
-Plant plants[N_PLANTS];
+Slot slots[N_SLOTS];
 
-int getMoisturePercent(Plant plant){
-    return (int) plant.adc.readADC_SingleEnded(plant.adcPort) / 2 ^ 16 * 100;
+int getMoisturePercent(Slot slot){
+    return (int) slot.adc.readADC_SingleEnded(slot.adcPort) / 2 ^ 16 * 100;
 }
 
-String getPlantModeStr(Plant plant){
-    return String(plant.mode == automatic ? "Automatic" : "Manual");
+String getSlotModeStr(Slot slot){
+    return String(slot.mode == automatic ? "Automatic" : "Manual");
 }
 
-void printPlant(int i){
-    Plant plant = plants[i];
-    Serial.print("plant(slot=");
+SlotMode slotModeFromStr(String str){
+    return str == "automatic" ? automatic : (str == "manual" ? manual : none);
+}
+
+void printSlot(int i){
+    Slot slot = slots[i];
+    Serial.print("slot(id=");
     Serial.print(i);
     Serial.print(", name=");
-    Serial.print(plant.name);
+    Serial.print(slot.name);
     Serial.print(", mode=");
-    Serial.print(plant.mode);
+    Serial.print(slot.mode);
     Serial.print(", threshold=");
-    Serial.print(plant.moistureThreshold);
+    Serial.print(slot.threshold);
     Serial.print(", interval=");
-    Serial.print(plant.wateringInterval);
+    Serial.print(slot.interval);
     Serial.println(")");
 }
-
 
 Adafruit_ADS1115 adsGND;
 Adafruit_ADS1115 adsVDD;
@@ -60,9 +72,10 @@ int pumpGPIOs[] { 32, 33, 25, 26, 27, 14, 12, 13 };
 WebServer server;
 
 
+/*
 class GetPlantPageBuilder : public PageBuilder {
     public:
-        GetPlantPageBuilder() : PageBuilder({}, HTTP_GET), _uri("^\\/plants\\/([0-N_PLANTS]+)$")
+        GetPlantPageBuilder() : PageBuilder({}, HTTP_GET), _uri("^\\/slots\\/([0-N_SLOTS]+)$")
         {
             _uri.initPathArgs(pathArgs);
         }
@@ -83,15 +96,15 @@ class GetPlantPageBuilder : public PageBuilder {
             );
             PageBuilder::addElement(header);
 
-            Plant plant = plants[plantId];
+            Plant plant = slots[plantId];
             printPlant(plantId);
             String asp, msp, defaultInterval, defaultThreshold;
-            if (plant.mode != notAttached){
+            if (plant.mode != none){
                 if (plant.mode == automatic){
                     msp = " ";
                     asp = " selected=\"selected\" ";
-                    defaultInterval = String(plant.wateringInterval);
-                    defaultThreshold = String(plant.moistureThreshold);
+                    defaultInterval = String(plant.interval);
+                    defaultThreshold = String(plant.threshold);
                 } else {
                     msp = " selected=\"selected\" ";
                     asp = " ";
@@ -126,29 +139,33 @@ class GetPlantPageBuilder : public PageBuilder {
         UriRegex _uri;
 };
 
-
 class RootPageBuilder : public PageBuilder {
     public:
-        RootPageBuilder() : PageBuilder{ "/plants", {}, HTTP_GET}{}
+        RootPageBuilder() : PageBuilder{ "/slots", {}, HTTP_GET}{}
 
         bool handle(WebServer& server, HTTPMethod requestMethod, PageBuilderUtil::URI_TYPE_SIGNATURE requestUri){
             PageBuilder::clearElements();
 
             PageElement header(
                 HTML_HEADER_MOLD,
-                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(plantId); }}}
+                {{"TITLE", [=](PageArgument& args){ return String("Active slots"); }}}
             );
+            PageBuilder::addElement(header);
+
+            static const char TITLE_MOLD[] = "     <h1>Active slots</h1>\n";
+            PageElement title(TITLE_MOLD, {});
+            PageBuilder::addElement(title);
 
             PageElement* plantDiv;
-            for (int i = 0; i < N_PLANTS; i++){
-                Plant plant = plants[i];
-                if (plant.mode != notAttached){
+            for (int i = 0; i < N_SLOTS; i++){
+                Plant plant = slots[i];
+                if (plant.mode != none){
                     if (plant.mode == automatic){
                         plantDiv = new PageElement(AUTOMATIC_PLANT_DIV_MOLD,
                                                    {{"SLOT", [=](PageArgument& args){ return String(i); }},
                                                     {"NAME", [=](PageArgument& args){ return String(plant.name); }},
-                                                    {"THRESHOLD", [=](PageArgument& args){ return String(plant.moistureThreshold); }},
-                                                    {"INTERVAL", [=](PageArgument& args){ return String(plant.wateringInterval); }}});
+                                                    {"THRESHOLD", [=](PageArgument& args){ return String(plant.threshold); }},
+                                                    {"INTERVAL", [=](PageArgument& args){ return String(plant.interval); }}});
 
                     }
                     if (plant.mode == manual){
@@ -166,37 +183,62 @@ class RootPageBuilder : public PageBuilder {
             PageBuilder::handle(server, requestMethod, requestUri);
         }
 };
+*/
 
-void handlePlantPost(){
-    int slot = server.pathArg(0).toInt();
-    String name = server.arg("name");
-    PlantMode mode = server.arg("mode") == "Automatic" ? automatic : manual;
-    int threshold, interval;
-    if (mode == automatic){
-        threshold = server.arg("threshold").toInt();
-        interval = server.arg("interval").toInt();
+void handleSlotPost(){
+    String slotIdStr = server.pathArg(0);
+    Serial.println(slotIdStr);
+    if (!regex_match(slotIdStr.c_str(), std::regex(SLOT_ID_REGEX))) {
+        server.send(400);
+        return;
+    }
+    int slotId = server.pathArg(0).toInt();
+
+    String modeStr = server.arg("mode");
+    Serial.println(modeStr);
+    if (modeStr != "automatic" && modeStr != "manual" && modeStr != "none") {
+        server.send(400);
+        return;
+    }
+    SlotMode mode = slotModeFromStr(modeStr);
+
+    if (mode == none) {
+        slots[slotId].mode = mode;
+        server.send(200);
+        return;
     }
 
-    plants[slot].name = name;
-    plants[slot].mode = mode;
-    plants[slot].moistureThreshold = threshold;
-    plants[slot].wateringInterval = interval;
+    const char* name = server.arg("name").c_str();
+    if (!regex_match(name, std::regex("^[\x20-\x7E]{1,50}$"))) {
+        server.send(400, "text/plain", "Name does not match");
+        return;
+    }
 
-    printPlant(slot);
-    
+    if (mode == automatic){
+        if (!regex_match(server.arg("threshold").c_str(), std::regex(THRESHOLD_REGEX))) {
+            server.send(400, "text/plain", "Threshold does not match");
+            return;
+        }
+        if (!regex_match(server.arg("interval").c_str(), std::regex(INTERVAL_REGEX))) {
+            server.send(400, "text/plain", "Threshold does not match");
+            return;
+        }
+        int threshold = server.arg("threshold").toInt();
+        int interval = server.arg("interval").toInt();
+        Serial.println(threshold);
+        Serial.println(interval);
+        slots[slotId].threshold = threshold;
+        slots[slotId].interval = interval;
+    }
+
+    strcpy(slots[slotId].name, name);
     server.send(200);
+    return;
 }
 
-void handlePlantDelete(){
-    int plantId = server.pathArg(0).toInt();
-    plants[plantId].mode = notAttached;
-    plants[plantId].name = String("");
-    server.send(200);
-}
 
-
-GetPlantPageBuilder getPlantPB;
-//RootPageBuilder rootPagePB{"/", {}, HTTP_GET};
+//GetPlantPageBuilder getPlantPB;
+//RootPageBuilder rootPagePB;
 
 void setup(){
     if (!adsGND.begin()) {
@@ -207,19 +249,20 @@ void setup(){
         Serial.println("Failed to initialize ads_VDD.");
         while (1);
     }
-    for (int i = 0; i < N_PLANTS; i++){
+    for (int i = 0; i < N_SLOTS; i++){
         if (i < 4) {
-            plants[i].adc = adsGND;
+            slots[i].adc = adsGND;
         }
         else {
-            plants[i].adc = adsVDD;
+            slots[i].adc = adsVDD;
         }
-        plants[i].mode = notAttached;
-        plants[i].adcPort = i;
-        plants[i].pumpGPIO = pumpGPIOs[i];
+        slots[i].mode = none;
+        slots[i].adcPort = i;
+        slots[i].pumpGPIO = pumpGPIOs[i];
     }
 
     Serial.begin(115200);
+
     WiFi.begin(SSID, PASSWORD);
     while (WiFi.status() != WL_CONNECTED){
         delay(100);
@@ -227,11 +270,10 @@ void setup(){
     Serial.print("IP address:");
     Serial.println(WiFi.localIP().toString());
 
-    getPlantPB.insert(server);
-//    rootPagePB.insert(server);
+    //getPlantPB.insert(server);
+    //rootPagePB.insert(server);
 
-    server.on(UriRegex("^\\/plants\\/([0-8]+)$"), HTTP_DELETE, handlePlantDelete);
-    server.on(UriRegex("^\\/plants\\/([0-8]+)$"), HTTP_POST, handlePlantPost);
+    server.on(UriRegex("^\\/slots\\/([0-7]+)$"), HTTP_POST, handleSlotPost);
 
     server.begin();
 }

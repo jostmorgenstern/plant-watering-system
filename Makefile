@@ -1,10 +1,5 @@
 compile:
-	xxd -i static/HTML_HEADER_MOLD > static.h
-	xxd -i static/HTML_FOOTER_MOLD >> static.h
-	xxd -i static/GET_PLANT_BODY_MOLD >> static.h
-	xxd -i static/MANUAL_PLANT_DIV_MOLD >> static.h
-	xxd -i static/AUTOMATIC_PLANT_DIV_MOLD >> static.h
-	sed -i "s/static_//g; s/unsigned/static const/g" static.h
+	python xxd.py > static.h
 	arduino-cli compile --fqbn esp32:esp32:nodemcu-32s .
 	rm static.h
 
