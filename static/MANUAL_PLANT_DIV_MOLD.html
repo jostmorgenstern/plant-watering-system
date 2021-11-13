@@ -1,14 +1,14 @@
 <div>
-    <h3>Slot {{SLOT}}: {{NAME}}</h3>
-    <p>Mode: Manual</p>
+    <h3>Slot {{ID}}: {{NAME}}</h3>
+    <p>Mode: manual</p>
     <div>
-        <form action="/plants/{{SLOT}}" method="post">
+        <form action="/slots/{{ID}}" method="get">
             <button type="submit">Edit</button>
         </form>
     </div>
     <div>
-        <form action="delete" method="post">
-            <input hidden name="slot" type="number" readonly="readonly" value="{{SLOT}}">
+        <form action="/slots/{{ID}}" method="post">
+            <input hidden name="mode" type="text" readonly="readonly" value="none">
             <button type="submit">Delete</button>
         </form>
     </div>

@@ -8,11 +8,9 @@
 #include "static.h"
 
 #define SSID "ssid"
-#define PASSWORD "password"
+#define PASSWORD "pw"
 #define N_SLOTS 8
 #define SLOT_ID_REGEX "^[0-7]$"
-#define THRESHOLD_REGEX "\\d\\d" //any two-digit integer
-#define INTERVAL_REGEX "^([1-9]|(1[0-4]))$" //any integer from 1 to 14
 #define MAX_SLOT_NAME_LEN 50
 #define MIN_THRESHOLD 30
 #define MAX_THRESHOLD 50
@@ -41,8 +39,8 @@ int getMoisturePercent(Slot slot){
     return (int) slot.adc.readADC_SingleEnded(slot.adcPort) / 2 ^ 16 * 100;
 }
 
-String getSlotModeStr(Slot slot){
-    switch(slot.mode){
+String getSlotModeStr(SlotMode mode){
+    switch(mode){
         case automatic:
             return "automatic";
         case manual:
@@ -57,6 +55,18 @@ SlotMode slotModeFromStr(String str){
         else if(str == "manual") return manual;
         else if(str == "none") return none;
 }
+
+int stringIsIntInRange(const String& str, int low, int high){
+    // Checks if str is the String representation of any integer between low and high (both inclusive).
+    // For example, stringIsIntInRange("10", 3, 40) is true.
+    // If false, returns -1 and if true, returns the the integer represented by str.
+    // Both low and high need to be positive and high needs to be greater than low.
+    for (int i = low; i <= high; i++){
+        if (String(i) == str) return i;
+    }
+    return -1;
+}
+
 
 void printRequest(WebServer& server){
     switch(server.method()){
@@ -113,10 +123,9 @@ int pumpGPIOs[] { 32, 33, 25, 26, 27, 14, 12, 13 };
 WebServer server;
 
 
-/*
 class GetPlantPageBuilder : public PageBuilder {
     public:
-        GetPlantPageBuilder() : PageBuilder({}, HTTP_GET), _uri("^\\/slots\\/([0-N_SLOTS]+)$")
+        GetPlantPageBuilder() : PageBuilder({}, HTTP_GET), _uri("^\\/slots\\/([0-7]+)$")
         {
             _uri.initPathArgs(pathArgs);
         }
@@ -127,25 +136,26 @@ class GetPlantPageBuilder : public PageBuilder {
         }
 
         bool handle(WebServer& server, HTTPMethod requestMethod, PageBuilderUtil::URI_TYPE_SIGNATURE requestUri){
+            printRequest(server);
             PageBuilder::clearElements();
 
-            int plantId = server.pathArg(0).toInt();
+            int slotId = server.pathArg(0).toInt();
             
             PageElement header(
                 HTML_HEADER_MOLD,
-                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(plantId); }}}
+                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(slotId); }}}
             );
             PageBuilder::addElement(header);
 
-            Plant plant = slots[plantId];
-            printPlant(plantId);
+            Slot slot = slots[slotId];
+            printSlot(slotId);
             String asp, msp, defaultInterval, defaultThreshold;
-            if (plant.mode != none){
-                if (plant.mode == automatic){
+            if (slot.mode != none){
+                if (slot.mode == automatic){
                     msp = " ";
                     asp = " selected=\"selected\" ";
-                    defaultInterval = String(plant.interval);
-                    defaultThreshold = String(plant.threshold);
+                    defaultInterval = String(slot.interval);
+                    defaultThreshold = String(slot.threshold);
                 } else {
                     msp = " selected=\"selected\" ";
                     asp = " ";
@@ -160,9 +170,9 @@ class GetPlantPageBuilder : public PageBuilder {
             }
             PageElement body(
                 GET_PLANT_BODY_MOLD,
-                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(plantId); }},
-                 {"ID", [=](PageArgument& args){ return String(plantId); }},
-                 {"NAME", [=](PageArgument& args){ return plant.name; }},
+                {{"TITLE", [=](PageArgument& args){ return String("Edit plant ") + String(slotId); }},
+                 {"ID", [=](PageArgument& args){ return String(slotId); }},
+                 {"NAME", [=](PageArgument& args){ return slot.name; }},
                  {"AUTOMATIC_SELECTED_PRESET", [=](PageArgument& args){ return asp; }},
                  {"MANUAL_SELECTED_PRESET", [=](PageArgument& args){ return msp; }},
                  {"THRESHOLD_DEFAULT_VALUE", [=](PageArgument& args){ return defaultThreshold; }},
@@ -174,6 +184,7 @@ class GetPlantPageBuilder : public PageBuilder {
             PageBuilder::addElement(footer);
 
             PageBuilder::handle(server, requestMethod, requestUri);
+            Serial.println("Success");
         }
 
     private:
@@ -185,6 +196,7 @@ class RootPageBuilder : public PageBuilder {
         RootPageBuilder() : PageBuilder{ "/slots", {}, HTTP_GET}{}
 
         bool handle(WebServer& server, HTTPMethod requestMethod, PageBuilderUtil::URI_TYPE_SIGNATURE requestUri){
+            printRequest(server);
             PageBuilder::clearElements();
 
             PageElement header(
@@ -198,57 +210,56 @@ class RootPageBuilder : public PageBuilder {
             PageBuilder::addElement(title);
 
             PageElement* plantDiv;
+            String slotOpts = "";
             for (int i = 0; i < N_SLOTS; i++){
-                Plant plant = slots[i];
-                if (plant.mode != none){
-                    if (plant.mode == automatic){
-                        plantDiv = new PageElement(AUTOMATIC_PLANT_DIV_MOLD,
-                                                   {{"SLOT", [=](PageArgument& args){ return String(i); }},
-                                                    {"NAME", [=](PageArgument& args){ return String(plant.name); }},
-                                                    {"THRESHOLD", [=](PageArgument& args){ return String(plant.threshold); }},
-                                                    {"INTERVAL", [=](PageArgument& args){ return String(plant.interval); }}});
-
-                    }
-                    if (plant.mode == manual){
-                        plantDiv = new PageElement(MANUAL_PLANT_DIV_MOLD,
-                                                   {{"SLOT", [=](PageArgument& args){ return String(i); }},
-                                                    {"NAME", [=](PageArgument& args){ return plant.name; }}});
-                    }
+                Slot slot = slots[i];
+                if (slot.mode == automatic){
+                    plantDiv = new PageElement(AUTOMATIC_PLANT_DIV_MOLD,
+                                               {{"ID", [=](PageArgument& args){ return String(i); }},
+                                                {"NAME", [=](PageArgument& args){ return String(slot.name); }},
+                                                {"THRESHOLD", [=](PageArgument& args){ return String(slot.threshold); }},
+                                                {"INTERVAL", [=](PageArgument& args){ return String(slot.interval); }}});
                     PageBuilder::addElement(*plantDiv);
                 }
+                else if (slot.mode == manual){
+                    plantDiv = new PageElement(MANUAL_PLANT_DIV_MOLD,
+                                               {{"ID", [=](PageArgument& args){ return String(i); }},
+                                                {"NAME", [=](PageArgument& args){ return slot.name; }}});
+                    PageBuilder::addElement(*plantDiv);
+                }
+                else if (slot.mode == none){
+                    String slotOpt = String("<option value=\"slotId\">slotId</option>\n");
+                    slotOpt.replace("slotId", String(i));
+                    slotOpts += slotOpt;
+                }
+                
             }
+            Serial.println(slotOpts);
+            PageElement addForm(ROOT_PAGE_ADD_FORM_MOLD,
+                                {{"SLOTOPTS", [=](PageArgument& args){ return slotOpts; }}});
+            PageBuilder::addElement(addForm);
             
             PageElement footer(HTML_FOOTER_MOLD, {});
             PageBuilder::addElement(footer);
             
             PageBuilder::handle(server, requestMethod, requestUri);
+            for (int i = 0; i < N_SLOTS; i++){
+                printSlot(i);
+            }
+            Serial.println("Success");
         }
 };
-*/
 
-int stringIsIntInRange(const String& str, int low, int high){
-    // Checks if str is the String representation of any integer between low and high (both inclusive).
-    // For example, stringIsIntInRange("10", 3, 40) is true.
-    // If false, returns -1 and if true, returns the the integer represented by str.
-    // Both low and high need to be positive and high needs to be greater than low.
-    for (int i = low; i <= high; i++){
-        if (String(i) == str) return i;
-    }
-    return -1;
-}
 
 void handleSlotPost(){
     printRequest(server);
 
-    int slotId;
-    if (slotId = stringIsIntInRange(server.pathArg(0), 0, N_SLOTS) == -1){
-        server.send(400, "text/plain", "slotId invalid");
-        return;
-    }
+    int slotId = server.pathArg(0).toInt();
     
     String modeStr = server.arg("mode");
     if (modeStr != "automatic" && modeStr != "manual" && modeStr != "none"){
-        server.send(400, "text/plain", "mode invalid");
+        server.send(400);
+        Serial.println("Error: mode invalid");
         return;
     }
     SlotMode mode = slotModeFromStr(modeStr);
@@ -262,42 +273,51 @@ void handleSlotPost(){
 
     if (mode == automatic){
         int threshold, interval;
-        if (threshold = stringIsIntInRange(server.arg("threshold"), MIN_THRESHOLD, MAX_THRESHOLD) == -1){
-            server.send(400, "text/plain", "threshold invalid");
+        if ((threshold = stringIsIntInRange(server.arg("threshold"), MIN_THRESHOLD, MAX_THRESHOLD)) == -1){
+            server.send(400);
+            Serial.println("Error: threshold invalid");
             return;
         }
-        if (interval = stringIsIntInRange(server.arg("interval"), MIN_INTERVAL, MAX_INTERVAL) == -1){
-            server.send(400, "text/plain", "interval invalid");
+        if ((interval = stringIsIntInRange(server.arg("interval"), MIN_INTERVAL, MAX_INTERVAL)) == -1){
+            server.send(400);
+            Serial.println("Error: interval invalid");
             return;
         }
         slots[slotId].threshold = threshold;
         slots[slotId].interval = interval;
+        Serial.println(threshold);
+        Serial.println(interval);
     }
 
     int nameArgLen = server.arg("name").length();
     String nameArg = server.arg("name");
     if (nameArgLen > MAX_SLOT_NAME_LEN){
-        server.send(400, "text/plain", "name too long");
+        server.send(400);
+        Serial.println("Error: name too long");
         return;
     }
     for (int i = 0; i < nameArgLen; i++){
         if (!(0x20 <= nameArg.charAt(i) <= 0x7E)) {
-            server.send(400, "text/plain", "name contains invalid chars");
+            server.send(400);
+            Serial.println("Error: name contains invalid chars");
             return;
         }
     }
     nameArg.toCharArray(slots[slotId].name, MAX_SLOT_NAME_LEN + 1);
+    Serial.println(slots[slotId].name);
     slots[slotId].mode = mode;
 
     server.send(200);
-    Serial.println("success");
-    printSlot(slotId);
+    Serial.println("Success");
+    for (int i = 0; i < N_SLOTS; i++){
+        printSlot(i);
+    }
     return;
 }
 
 
-//GetPlantPageBuilder getPlantPB;
-//RootPageBuilder rootPagePB;
+GetPlantPageBuilder getPlantPB;
+RootPageBuilder rootPagePB;
 
 void setup(){
     if (!adsGND.begin()) {
@@ -329,8 +349,8 @@ void setup(){
     Serial.print("IP address:");
     Serial.println(WiFi.localIP().toString());
 
-    //getPlantPB.insert(server);
-    //rootPagePB.insert(server);
+    getPlantPB.insert(server);
+    rootPagePB.insert(server);
 
     server.on(UriRegex("^\\/slots\\/([0-7]+)$"), HTTP_POST, handleSlotPost);
 

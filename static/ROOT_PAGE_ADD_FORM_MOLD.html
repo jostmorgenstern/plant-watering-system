@@ -1,0 +1,17 @@
+<div>
+    <label for="add-port-select">Slot: </label>
+    <select name="slot" id="add-port-select">
+        {{SLOTOPTS}}
+    </select>
+    <form action="" method="get" id="add-form">
+        <button type="submit">Add plant</button>
+    </form>
+    <script>
+        let addForm = document.getElementById("add-form");
+        let portSel = document.getElementById("add-port-select");
+        addForm.action = "/slots/" + portSel.value;
+        portSel.addEventListener("change", function() {
+            addForm.action = "/slots/" + portSel.value;
+        })
+    </script>
+</div>

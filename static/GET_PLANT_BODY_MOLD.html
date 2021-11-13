@@ -1,5 +1,5 @@
         <h1>Slot {{ID}}</h1>
-        <form action="/plants/{{ID}}" method="post">
+        <form action="/slots/{{ID}}" method="post">
             <div>
                 <label for="name-select">Name:</label>
                 <input name="name" id="name-select" type="text" pattern="[x20-x7E]+" maxlength="50" value="{{NAME}}">
@@ -7,8 +7,8 @@
             <div>
                 <label for="mode-select">Mode:<label>
                 <select name="mode" id="mode-select">
-                    <option{{AUTOMATIC_SELECTED_PRESET}}value="Automatic">Automatic</option>
-                    <option{{MANUAL_SELECTED_PRESET}}value="Manual">Manual</option>
+                    <option{{AUTOMATIC_SELECTED_PRESET}}value="automatic">Automatic</option>
+                    <option{{MANUAL_SELECTED_PRESET}}value="manual">Manual</option>
                 </select>
             </div>
             <div id="threshold-interval-container">
@@ -22,14 +22,19 @@
                 </div>
             </div>
             <div>
-                <button type="submit" id="submit-btn" onClick="window.location.href = '/plants'">Save</button>
+                <button type="submit" id="submit-btn" onClick="window.location.href = '/slots'">Save</button>
             </div>
         </form>
         <script>
             let sel = document.getElementById("mode-select");
+            let tic = document.getElementById("threshold-interval-container");
+            if (sel.value == "manual") {
+                tic.style.display = "none";
+            } else {
+                tic.style.display = "block";
+            }
             sel.addEventListener("change", function() {
-                let tic = document.getElementById("threshold-interval-container");
-                if (sel.value == "Manual") {
+                if (sel.value == "manual") {
                     tic.style.display = "none";
                 } else {
                     tic.style.display = "block";

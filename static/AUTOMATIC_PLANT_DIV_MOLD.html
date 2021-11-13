@@ -1,17 +1,16 @@
 <div>
-    <h3>Slot {{SLOT}}: {{NAME}}</h3>
-    <p>Mode: Automatic</p>
+    <h3>Slot {{ID}}: {{NAME}}</h3>
+    <p>Mode: automatic</p>
     <p>Moisture threshold: {{THRESHOLD}}</P>
     <p>Watering interval: {{INTERVAL}}</P>
     <div>
-        <form action="edit" method="post">
-            <input hidden name="slot" type="number" readonly="readonly" value="{{SLOT}}">
+        <form action="/slots/{{ID}}" method="get">
             <button type="submit">Edit</button>
         </form>
     </div>
     <div>
-        <form action="delete" method="post">
-            <input hidden name="slot" type="number" readonly="readonly" value="{{SLOT}}">
+        <form action="/slots/{{ID}}" method="post">
+            <input hidden name="mode" type="text" readonly="readonly" value="none">
             <button type="submit">Delete</button>
         </form>
     </div>
