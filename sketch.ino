@@ -8,11 +8,11 @@
 #include "static.h"
 
 #define SSID "ssid"
-#define PASSWORD "ssid"
+#define PASSWORD "password"
 #define N_SLOTS 8
 #define SLOT_ID_REGEX "^[0-7]$"
-#define THRESHOLD_REGEX "\\d\\d"
-#define INTERVAL_REGEX "^([1-9]|(1[0-4]))$"
+#define THRESHOLD_REGEX "\\d\\d" //any two-digit integer
+#define INTERVAL_REGEX "^([1-9]|(1[0-4]))$" //any integer from 1 to 14
 #define MAX_SLOT_NAME_LEN 50
 #define MIN_THRESHOLD 30
 #define MAX_THRESHOLD 50
@@ -42,11 +42,52 @@ int getMoisturePercent(Slot slot){
 }
 
 String getSlotModeStr(Slot slot){
-    return String(slot.mode == automatic ? "Automatic" : "Manual");
+    switch(slot.mode){
+        case automatic:
+            return "automatic";
+        case manual:
+            return "manual";
+        case none:
+            return "none";
+    }
 }
 
 SlotMode slotModeFromStr(String str){
-    return str == "automatic" ? automatic : (str == "manual" ? manual : none);
+        if(str == "automatic") return automatic;
+        else if(str == "manual") return manual;
+        else if(str == "none") return none;
+}
+
+void printRequest(WebServer& server){
+    switch(server.method()){
+        case HTTP_GET:
+            Serial.print("GET ");
+            break;
+        case HTTP_POST:
+            Serial.print("POST ");
+            break;
+        case HTTP_DELETE:
+            Serial.print("DELETE ");
+            break;
+    }
+    Serial.print(server.uri());
+    int argc = server.args();
+    if (argc > 0) Serial.print("?");
+    for (int i = 0; i < argc; i++){
+        Serial.print(server.argName(i));
+        Serial.print("=");
+        Serial.print(server.arg(i));
+        if (i < argc - 1) Serial.print("&");
+    }
+    Serial.println();
+}
+
+void printCString(char arr[]){
+    for (int i = 0; (int) arr[i] != 0; i++) {
+        Serial.print(arr[i]);
+        Serial.print(",");
+        Serial.println();
+    }
 }
 
 void printSlot(int i){
@@ -185,19 +226,29 @@ class RootPageBuilder : public PageBuilder {
 };
 */
 
+int stringIsIntInRange(const String& str, int low, int high){
+    // Checks if str is the String representation of any integer between low and high (both inclusive).
+    // For example, stringIsIntInRange("10", 3, 40) is true.
+    // If false, returns -1 and if true, returns the the integer represented by str.
+    // Both low and high need to be positive and high needs to be greater than low.
+    for (int i = low; i <= high; i++){
+        if (String(i) == str) return i;
+    }
+    return -1;
+}
+
 void handleSlotPost(){
-    String slotIdStr = server.pathArg(0);
-    Serial.println(slotIdStr);
-    if (!regex_match(slotIdStr.c_str(), std::regex(SLOT_ID_REGEX))) {
-        server.send(400);
+    printRequest(server);
+
+    int slotId;
+    if (slotId = stringIsIntInRange(server.pathArg(0), 0, N_SLOTS) == -1){
+        server.send(400, "text/plain", "slotId invalid");
         return;
     }
-    int slotId = server.pathArg(0).toInt();
-
+    
     String modeStr = server.arg("mode");
-    Serial.println(modeStr);
-    if (modeStr != "automatic" && modeStr != "manual" && modeStr != "none") {
-        server.send(400);
+    if (modeStr != "automatic" && modeStr != "manual" && modeStr != "none"){
+        server.send(400, "text/plain", "mode invalid");
         return;
     }
     SlotMode mode = slotModeFromStr(modeStr);
@@ -205,34 +256,42 @@ void handleSlotPost(){
     if (mode == none) {
         slots[slotId].mode = mode;
         server.send(200);
-        return;
-    }
-
-    const char* name = server.arg("name").c_str();
-    if (!regex_match(name, std::regex("^[\x20-\x7E]{1,50}$"))) {
-        server.send(400, "text/plain", "Name does not match");
+        printSlot(slotId);
         return;
     }
 
     if (mode == automatic){
-        if (!regex_match(server.arg("threshold").c_str(), std::regex(THRESHOLD_REGEX))) {
-            server.send(400, "text/plain", "Threshold does not match");
+        int threshold, interval;
+        if (threshold = stringIsIntInRange(server.arg("threshold"), MIN_THRESHOLD, MAX_THRESHOLD) == -1){
+            server.send(400, "text/plain", "threshold invalid");
             return;
         }
-        if (!regex_match(server.arg("interval").c_str(), std::regex(INTERVAL_REGEX))) {
-            server.send(400, "text/plain", "Threshold does not match");
+        if (interval = stringIsIntInRange(server.arg("interval"), MIN_INTERVAL, MAX_INTERVAL) == -1){
+            server.send(400, "text/plain", "interval invalid");
             return;
         }
-        int threshold = server.arg("threshold").toInt();
-        int interval = server.arg("interval").toInt();
-        Serial.println(threshold);
-        Serial.println(interval);
         slots[slotId].threshold = threshold;
         slots[slotId].interval = interval;
     }
 
-    strcpy(slots[slotId].name, name);
+    int nameArgLen = server.arg("name").length();
+    String nameArg = server.arg("name");
+    if (nameArgLen > MAX_SLOT_NAME_LEN){
+        server.send(400, "text/plain", "name too long");
+        return;
+    }
+    for (int i = 0; i < nameArgLen; i++){
+        if (!(0x20 <= nameArg.charAt(i) <= 0x7E)) {
+            server.send(400, "text/plain", "name contains invalid chars");
+            return;
+        }
+    }
+    nameArg.toCharArray(slots[slotId].name, MAX_SLOT_NAME_LEN + 1);
+    slots[slotId].mode = mode;
+
     server.send(200);
+    Serial.println("success");
+    printSlot(slotId);
     return;
 }
 
